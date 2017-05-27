@@ -8,7 +8,7 @@ import os.path
 
 import skvideo.io
 slope = -0.65
-height = 430
+height = 450
 base = 677
 
 def calibrate_camera():
@@ -123,7 +123,7 @@ def region_of_interest(img, vertices):
 def persperctive_transform(img):
     middle = img.shape[1]/2
     bottom = img.shape[0]
-    space_lines = 180
+    space_lines = 250
     src_points = np.float32([[250,base], 
                              [int(((height-base)/slope)+244), height], 
                              [int(((height-base)/(slope*-1))+1036),height], 
@@ -272,6 +272,10 @@ def pipeline_process(img, left_fit=None, right_fit=None):
     warped = cv2.bitwise_or(warped, out_img)
     warped = cv2.putText(warped,'CURVATURE: {0:.1f}m, {0:.1f}m'.format(curvature[0], curvature[1]), 
                          (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
+    warped = cv2.putText(warped,'LEFTpoly: {0:.6f}, {0:.6f}, {0:.6f}'.format(left_fit[0], left_fit[1], left_fit[2]), 
+                         (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
+    warped = cv2.putText(warped,'RIGHTpoly: {0:.6f}, {0:.6f}, {0:.6f}'.format(right_fit[0], right_fit[1], right_fit[2]), 
+                         (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
     #img = np.expand_dims(img, axis=-1)
     return warped, out_img, left_fit, right_fit
 
@@ -329,5 +333,5 @@ else:
 
 #test_calibration_camera()
 #test_images()
-process_video('project_video.mp4')
+process_video('harder_challenge_video.mp4')
 
