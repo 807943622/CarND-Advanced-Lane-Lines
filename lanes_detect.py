@@ -10,6 +10,26 @@ import skvideo.io
 slope = -0.65
 height = 450
 base = 677
+ym_per_pix = 30/720 # meters per pixel in y dimension
+xm_per_pix = 3.7/700 # meters per pixel in x dimension
+class Line():
+    def __init__(self):
+        # was the line detected in the last iteration?
+        self.detected = False  
+        # x values of the last n fits of the line
+        self.recent_xfitted = [] 
+        #average x values of the fitted line over the last n iterations
+        self.bestx = None     
+        #polynomial coefficients averaged over the last n iterations
+        self.best_fit = None  
+        # polynomial coefficients of the last n fits of the line
+        self.recent_fitted = [] 
+        #polynomial coefficients for the most recent fit
+        self.current_fit = [np.array([False])]  
+        #radius of curvature of the line in some units
+        self.radius_of_curvature = None 
+        #distance in meters of vehicle center from the line
+        self.line_base_pos = None 
 
 def calibrate_camera():
     images = glob.glob('./camera_cal/calibration*.jpg')
@@ -231,8 +251,6 @@ def find_lines_margin(binary_warped, left_fit, right_fit):
 
 def get_lines_curvature(leftx, lefty, rightx, righty, ploty):
     y_eval = np.max(ploty)
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
 
     # Fit new polynomials to x,y in world space
     left_fit_cr = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
@@ -243,7 +261,9 @@ def get_lines_curvature(leftx, lefty, rightx, righty, ploty):
     # Now our radius of curvature is in meters
     return (left_curverad, right_curverad)
 
-def pipeline_process(img, left_fit=None, right_fit=None):
+def pipeline_process(img, left_line, right_line):
+    left_fit = left_line.best_fit
+    right_fit = right_line.best_fit
     left_down_corner = 0.28*img.shape[1]
     rigth_down_corner = 0.72*img.shape[1]
     horizont = 0*img.shape[0]
@@ -257,28 +277,53 @@ def pipeline_process(img, left_fit=None, right_fit=None):
     warped, M = persperctive_transform(img)
     thresholded_image = threshold_image(warped)
     warped_lines = thresholded_image
-    if(left_fit == None or right_fit == None):
+    if(left_line.best_fit == None or right_line.best_fit == None):
         thresholded_image = region_of_interest(thresholded_image, vertices)
         left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, warped_lines = find_lanes(thresholded_image)
     else:
-        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, warped_lines = find_lines_margin(thresholded_image, left_fit, right_fit)
+        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, warped_lines = find_lines_margin(thresholded_image, left_line.best_fit, right_line.best_fit)
     
+    memory = -10
+
+    left_line.recent_fitted.append(left_fit)
+    right_line.recent_fitted.append(right_fit)
+    if(len(left_line.recent_fitted) > 10):
+        left_line.recent_fitted = left_line.recent_fitted[memory:-1]
+        right_line.recent_fitted = right_line.recent_fitted[memory:-1]
+
+    left_line.best_fit = np.mean(left_line.recent_fitted, axis=0)
+    right_line.best_fit = np.mean(right_line.recent_fitted, axis=0)
+    left_fit = left_line.best_fit
+    righ_fit = right_line.best_fit
+
+    left_line.current_fit = left_fit
+    right_line.current_fit = right_fit
+
     ploty = np.linspace(0, thresholded_image.shape[0]-1, thresholded_image.shape[0] )
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-    warped_lines[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    warped_lines[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+    left_line.recent_xfitted.append(left_fitx)
+    right_line.recent_xfitted.append(right_fitx)
+    if(len(left_line.recent_xfitted) > 4):
+        left_line.recent_xfitted = left_line.recent_xfitted[memory:-1]
+        right_line.recent_xfitted = right_line.recent_xfitted[memory:-1]
+    left_line.bestx = np.mean(left_line.recent_xfitted, axis=0)
+    right_line.bestx = np.mean(right_line.recent_xfitted, axis=0)
+
+    left_line.line_base_pos = ((left_fitx[-1] + right_fitx[-1])/2 - middle)*xm_per_pix
+    right_line.line_base_pos = ((left_fitx[-1] + right_fitx[-1])/2 - middle)*xm_per_pix
+    #warped_lines[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+    #warped_lines[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
     #warped = cv2.bitwise_or(warped, warped_lines)
+    
     img = cv2.putText(img,'CURVATURE: {0:.1f}m, {0:.1f}m'.format(curvature[0], curvature[1]), 
-                         (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
+                         (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.1, 255, thickness = 2)
+    img = cv2.putText(img,'Distance from center: {0:.2f}m'.format(left_line.line_base_pos), 
+                         (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.1, 255, thickness = 2)
+
     left_points = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
     right_points = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-    '''for i in range(len(left_fitx)):
-        left_points.append([int(left_fitx[i]), int(ploty[i])])
-    for i in range(len(right_fitx)):
-        right_points.append([int(right_fitx[i]), int(ploty[i])])
-    left_points = np.array(left_points, dtype=np.int32)
-    right_points = np.array(right_points, dtype=np.int32)'''
     warped = cv2.polylines(warped,[np.int_(left_points),np.int_(right_points)], False, 0, thickness=5)
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
@@ -294,14 +339,14 @@ def pipeline_process(img, left_fit=None, right_fit=None):
     # Combine the result with the original image
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
 
-    return result, warped, warped_lines, left_fit, right_fit
+    return result, warped, warped_lines, left_line, right_line
 
 def process_video(video):
     vid = skvideo.io.vreader(video)
     writer = skvideo.io.FFmpegWriter('{}_out.mp4'.format(video[:-4]), verbosity=1)
-    left_fit, right_fit = None, None
+    left_line, right_line = Line(), Line()
     for frame in vid:
-        img, warped, lines, left_fit, right_fit = pipeline_process(frame, left_fit, right_fit)
+        img, warped, lines, left_line, right_line = pipeline_process(frame, left_line, right_line)
 #        plt.imshow(img)
 #        plt.pause(0.01)
         writer.writeFrame(img)
