@@ -134,7 +134,7 @@ def persperctive_transform(img):
                              [middle+space_lines,bottom]])
     M = cv2.getPerspectiveTransform(src_points, dst_points)
     warped = cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
-    return warped
+    return warped, M
 
 def find_lanes(binary_warped):
     histogram = np.sum(binary_warped[binary_warped.shape[0]/2:,:], axis=0)
@@ -254,40 +254,57 @@ def pipeline_process(img, left_fit=None, right_fit=None):
                           (middle + horizont_margin, horizont), 
                           (rigth_down_corner, img.shape[0]) 
                          ]], dtype=np.int32)
-    warped = persperctive_transform(img)
+    warped, M = persperctive_transform(img)
     thresholded_image = threshold_image(warped)
-    out_img = thresholded_image
+    warped_lines = thresholded_image
     if(left_fit == None or right_fit == None):
         thresholded_image = region_of_interest(thresholded_image, vertices)
-        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, out_img = find_lanes(thresholded_image)
+        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, warped_lines = find_lanes(thresholded_image)
     else:
-        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, out_img = find_lines_margin(thresholded_image, left_fit, right_fit)
+        left_fit, right_fit, nonzeroy, nonzerox, left_lane_inds, right_lane_inds, curvature, warped_lines = find_lines_margin(thresholded_image, left_fit, right_fit)
     
     ploty = np.linspace(0, thresholded_image.shape[0]-1, thresholded_image.shape[0] )
-    #print(curvature)
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-    out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-    warped = cv2.bitwise_or(warped, out_img)
-    warped = cv2.putText(warped,'CURVATURE: {0:.1f}m, {0:.1f}m'.format(curvature[0], curvature[1]), 
+    warped_lines[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+    warped_lines[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+    #warped = cv2.bitwise_or(warped, warped_lines)
+    img = cv2.putText(img,'CURVATURE: {0:.1f}m, {0:.1f}m'.format(curvature[0], curvature[1]), 
                          (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
-    warped = cv2.putText(warped,'LEFTpoly: {0:.6f}, {0:.6f}, {0:.6f}'.format(left_fit[0], left_fit[1], left_fit[2]), 
-                         (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
-    warped = cv2.putText(warped,'RIGHTpoly: {0:.6f}, {0:.6f}, {0:.6f}'.format(right_fit[0], right_fit[1], right_fit[2]), 
-                         (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 255, thickness = 2)
-    #img = np.expand_dims(img, axis=-1)
-    return warped, out_img, left_fit, right_fit
+    left_points = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    right_points = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    '''for i in range(len(left_fitx)):
+        left_points.append([int(left_fitx[i]), int(ploty[i])])
+    for i in range(len(right_fitx)):
+        right_points.append([int(right_fitx[i]), int(ploty[i])])
+    left_points = np.array(left_points, dtype=np.int32)
+    right_points = np.array(right_points, dtype=np.int32)'''
+    warped = cv2.polylines(warped,[np.int_(left_points),np.int_(right_points)], False, 0, thickness=5)
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts = np.hstack((left_points, right_points))
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(warp_zero, np.int_([pts]), (0,255, 0))
+    
+    Minv = cv2.invert(M)[1]
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(warp_zero, Minv, (warped.shape[1], warped.shape[0]), flags=cv2.INTER_LINEAR) 
+    # Combine the result with the original image
+    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+
+    return result, warped, warped_lines, left_fit, right_fit
 
 def process_video(video):
     vid = skvideo.io.vreader(video)
     writer = skvideo.io.FFmpegWriter('{}_out.mp4'.format(video[:-4]), verbosity=1)
     left_fit, right_fit = None, None
     for frame in vid:
-        output, lines, left_fit, right_fit = pipeline_process(frame, left_fit, right_fit)
+        img, warped, lines, left_fit, right_fit = pipeline_process(frame, left_fit, right_fit)
 #        plt.imshow(img)
 #        plt.pause(0.01)
-        writer.writeFrame(output)
+        writer.writeFrame(img)
     writer.close()
 
 def test_images():
@@ -305,8 +322,7 @@ def test_images():
         cv2.line(img, src_points[0], src_points[1], [255,0,0], 2)
         cv2.line(img, src_points[2], src_points[3], [0,255,0], 2)
 
-        warped, out_img, left_fit, right_fit = pipeline_process(img2)
-
+        img, warped, out_img, left_fit, right_fit = pipeline_process(img2)
         a = fig.add_subplot(2,2,1)
         imgplot = plt.imshow(img)
         a = fig.add_subplot(2,2,2)
@@ -333,5 +349,5 @@ else:
 
 #test_calibration_camera()
 #test_images()
-process_video('harder_challenge_video.mp4')
+process_video('project_video.mp4')
 
