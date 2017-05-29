@@ -274,7 +274,8 @@ def pipeline_process(img, left_line, right_line):
                           (middle + horizont_margin, horizont), 
                           (rigth_down_corner, img.shape[0]) 
                          ]], dtype=np.int32)
-    warped, M = persperctive_transform(img)
+    undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+    warped, M = persperctive_transform(undistorted)
     thresholded_image = threshold_image(warped)
     warped_lines = thresholded_image
     if(left_line.best_fit == None or right_line.best_fit == None):
@@ -313,9 +314,9 @@ def pipeline_process(img, left_line, right_line):
 
     left_line.line_base_pos = ((left_fitx[-1] + right_fitx[-1])/2 - middle)*xm_per_pix
     right_line.line_base_pos = ((left_fitx[-1] + right_fitx[-1])/2 - middle)*xm_per_pix
-    #warped_lines[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-    #warped_lines[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-    #warped = cv2.bitwise_or(warped, warped_lines)
+    warped_lines[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+    warped_lines[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+    warped = cv2.bitwise_or(warped, warped_lines)
     
     img = cv2.putText(img,'CURVATURE: {0:.1f}m, {0:.1f}m'.format(curvature[0], curvature[1]), 
                          (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.1, 255, thickness = 2)
@@ -362,16 +363,17 @@ def test_images():
         img2 = np.copy(img)
         middle = img.shape[1]/2
         bottom = img.shape[0]
+        left_line, right_line = Line(), Line()
         src_points = [(250, base), (int(((height-base)/slope)+250), height), 
                       (int(((height-base)/(slope*-1))+1052), height), (1052, base)]
         cv2.line(img, src_points[0], src_points[1], [255,0,0], 2)
         cv2.line(img, src_points[2], src_points[3], [0,255,0], 2)
 
-        img, warped, out_img, left_fit, right_fit = pipeline_process(img2)
+        img, warped, lines, left_line, right_line = pipeline_process(img2, left_line, right_line)
         a = fig.add_subplot(2,2,1)
         imgplot = plt.imshow(img)
         a = fig.add_subplot(2,2,2)
-        imgplot = plt.imshow(out_img)
+        imgplot = plt.imshow(lines)
         a = fig.add_subplot(2,2,3)
         imgplot = plt.imshow(warped)
         plt.show()
@@ -393,6 +395,6 @@ else:
     print('Camera calibrated')
 
 #test_calibration_camera()
-#test_images()
-process_video('project_video.mp4')
+test_images()
+#process_video('project_video.mp4')
 
