@@ -1,5 +1,5 @@
 ## Advanced Lane Finding
-[![Result](https://j.gifs.com/mwrnyO.gif)](https://youtu.be/Wcl3YkgNxVg)
+[![Result](https://j.gifs.com/76QwXj.gif)](https://youtu.be/Wcl3YkgNxVg)
 
 [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
