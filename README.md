@@ -1,5 +1,5 @@
 ## Advanced Lane Finding
-![CarND-Advanced-Lane-Lines - SDC](https://youtu.be/Wcl3YkgNxVg)
+[![CarND-Advanced-Lane-Lines - SDC](http://i.makeagif.com/media/7-03-2017/V3jAEf.gif)](https://youtu.be/Wcl3YkgNxVg)
 
 [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
